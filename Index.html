@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>BADEA Coordinates Converter</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+  <style>
+    body { font-family: Tahoma, sans-serif; text-align: center; background: #f9f9f9; margin: 0; padding: 20px; }
+    .box { margin: 0 auto; padding: 20px; background: white; width: 500px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    input, select { margin: 5px 0; padding: 8px; width: 90%; box-sizing: border-box; }
+    button { padding: 10px 20px; margin-top: 10px; }
+    .result { margin-top: 15px; font-weight: bold; white-space: pre-line; text-align: left; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>BADEA Coordinates Converter</h2>
+    
+    <label>نوع الإدخال:</label><br>
+    <select id="inputType" onchange="switchInput()">
+      <option value="dd">Lat/Lon (درجات عشرية)</option>
+      <option value="dms">Lat/Lon (DMS ‒ درجات دقايق ثواني)</option>
+      <option value="utm">UTM (شرقيات/شماليات + المنطقة)</option>
+    </select>
+    
+    <div id="inputFields"></div>
+    
+    <button onclick="convert()">تحويل</button>
+    <div class="result" id="output"></div>
+  </div>
+
+  <script>
+    // تحويل من DMS إلى Decimal Degrees
+    function dmsToDd(deg, min, sec, dir) {
+      let dd = Math.abs(deg) + (min/60) + (sec/3600);
+      if (dir === "S" || dir === "W") dd = -dd;
+      return dd;
+    }
+
+    // تحويل من Decimal Degrees إلى DMS
+    function ddToDms(dd, latLon) {
+      const dir = dd < 0 ? (latLon === "lat" ? "S" : "W") : (latLon === "lat" ? "N" : "E");
+      dd = Math.abs(dd);
+      const deg = Math.floor(dd);
+      const min = Math.floor((dd - deg) * 60);
+      const sec = ((dd - deg - min/60) * 3600).toFixed(2);
+      return `${deg}°${min}'${sec}" ${dir}`;
+    }
+
+    function switchInput() {
+      const type = document.getElementById("inputType").value;
+      let fields = "";
+
+      if (type === "dd") {
+        fields = `
+          <input id="lat" placeholder="Latitude (مثال: 31.0208611)">
+          <input id="lon" placeholder="Longitude (مثال: 32.8851111)">
+        `;
+      } else if (type === "dms") {
+        fields = `
+          <input id="latDeg" placeholder="Latitude Degrees">
+          <input id="latMin" placeholder="Latitude Minutes">
+          <input id="latSec" placeholder="Latitude Seconds">
+          <input id="latDir" placeholder="N أو S">
+          <input id="lonDeg" placeholder="Longitude Degrees">
+          <input id="lonMin" placeholder="Longitude Minutes">
+          <input id="lonSec" placeholder="Longitude Seconds">
+          <input id="lonDir" placeholder="E أو W">
+        `;
+      } else if (type === "utm") {
+        fields = `
+          <input id="zone" placeholder="Zone (مثال: 36N أو بس الرقم 36)">
+          <input id="easting" placeholder="شرقيات (Easting)">
+          <input id="northing" placeholder="شماليات (Northing)">
+        `;
+      }
+
+      document.getElementById("inputFields").innerHTML = fields;
+    }
+
+    switchInput(); // عند التحميل
+
+    function convert() {
+      const type = document.getElementById("inputType").value;
+      let output = "";
+
+      try {
+        if (type === "dd") {
+          const lat = parseFloat(document.getElementById("lat").value);
+          const lon = parseFloat(document.getElementById("lon").value);
+          if (isNaN(lat) || isNaN(lon)) throw "القيم غير صحيحة";
+
+          const dmsLat = ddToDms(lat, "lat");
+          const dmsLon = ddToDms(lon, "lon");
+
+          // تحديد المنطقة UTM من Longitude
+          const zoneNum = Math.floor((lon + 180) / 6) + 1;
+          const utmProj = `+proj=utm +zone=${zoneNum} +datum=WGS84 +units=m +no_defs`;
+
+          const [easting, northing] = proj4("EPSG:4326", utmProj, [lon, lat]);
+
+          output = 
+            `Lat/Lon (درجات عشرية): ${lat.toFixed(6)}, ${lon.toFixed(6)}\n` +
+            `Lat/Lon (DMS): ${dmsLat}, ${dmsLon}\n` +
+            `UTM (Zone ${zoneNum}): E=${easting.toFixed(2)}, N=${northing.toFixed(2)}`;
+        } else if (type === "dms") {
+          const lat = dmsToDd(
+            parseFloat(document.getElementById("latDeg").value),
+            parseFloat(document.getElementById("latMin").value),
+            parseFloat(document.getElementById("latSec").value),
+            document.getElementById("latDir").value.toUpperCase()
+          );
+          const lon = dmsToDd(
+            parseFloat(document.getElementById("lonDeg").value),
+            parseFloat(document.getElementById("lonMin").value),
+            parseFloat(document.getElementById("lonSec").value),
+            document.getElementById("lonDir").value.toUpperCase()
+          );
+          if (isNaN(lat) || isNaN(lon)) throw "القيم غير صحيحة";
+
+          const dmsLat = ddToDms(lat, "lat");
+          const dmsLon = ddToDms(lon, "lon");
+
+          const zoneNum = Math.floor((lon + 180) / 6) + 1;
+          const utmProj = `+proj=utm +zone=${zoneNum} +datum=WGS84 +units=m +no_defs`;
+
+          const [easting, northing] = proj4("EPSG:4326", utmProj, [lon, lat]);
+
+          output = 
+            `Lat/Lon (درجات عشرية): ${lat.toFixed(6)}, ${lon.toFixed(6)}\n` +
+            `Lat/Lon (DMS): ${dmsLat}, ${dmsLon}\n` +
+            `UTM (Zone ${zoneNum}): E=${easting.toFixed(2)}, N=${northing.toFixed(2)}`;
+        } else if (type === "utm") {
+          const zone = document.getElementById("zone").value;
+          const easting = parseFloat(document.getElementById("easting").value);
+          const northing = parseFloat(document.getElementById("northing").value);
+          if (!zone || isNaN(easting) || isNaN(northing)) throw "القيم غير صحيحة";
+
+          const utmProj = `+proj=utm +zone=${zone} +datum=WGS84 +units=m +no_defs`;
+          const [lonLatX, lonLatY] = proj4(utmProj, "EPSG:4326", [easting, northing]);
+
+          const latDec = lonLatY;
+          const lonDec = lonLatX;
+          const dmsLat = ddToDms(latDec, "lat");
+          const dmsLon = ddToDms(lonDec, "lon");
+
+          output =
+            `UTM (Zone ${zone}): E=${easting.toFixed(2)}, N=${northing.toFixed(2)}\n` +
+            `Lat/Lon (درجات عشرية): ${latDec.toFixed(6)}, ${lonDec.toFixed(6)}\n` +
+            `Lat/Lon (DMS): ${dmsLat}, ${dmsLon}`;
+        }
+      } catch(err) {
+        output = "⚠️ خطأ: " + err;
+      }
+
+      document.getElementById("output").innerText = output;
+    }
+  </script>
+</body>
+</html>
